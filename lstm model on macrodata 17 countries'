@@ -1,0 +1,129 @@
+
+
+library(zoo)
+library(reticulate)
+library(tidyverse)
+library(magrittr)
+
+
+#function for choosing variables from data 
+create_dataM <- function(output, pickM = c(1:length(macro_variables)),
+                         pickS = c(1:length(sector_variables)), pickC = c(1:length(crisis_variables))){
+  
+  dataM <-  bind_cols(as.data.frame(macro_variables[c(pickM)]),
+                      as.data.frame(sector_variables[c(pickS)]),
+                      as.data.frame(crisis_variables[c(pickC)]))
+  dataM %<>% select(output, everything())
+  return(dataM)
+}
+
+
+
+
+
+macro_4_core %<>% select(-1)
+macro_4_core %<>% select(-1, -2, -18, -23)
+
+
+#replacing debt to gdp, short term interest rate and long term interest rate na:s
+
+aa <- split(macro_4_core, f = macro_4_core$country)
+for (i in 1:length(aa)){
+  #debt to gdp
+  aa[[i]][, "debt_to_gdp"] <- na.locf0(unlist(aa[[i]][, "debt_to_gdp"]))
+  aa[[i]][, "debt_to_gdp"] <- na.locf0(unlist(aa[[i]][, "debt_to_gdp"]), fromLast = TRUE)
+  #short term rate
+  aa[[i]][, "stir"] <- na.locf0(unlist(aa[[i]][, "stir"]))
+  aa[[i]][, "stir"] <- na.locf0(unlist(aa[[i]][, "stir"]), fromLast = TRUE)
+  #long term rate
+  aa[[i]][, "ltrate"] <- na.locf0(unlist(aa[[i]][, "ltrate"]))
+  aa[[i]][, "ltrate"] <- na.locf0(unlist(aa[[i]][, "ltrate"]), fromLast = TRUE)
+}
+macro_4_core <- do.call("rbind", aa)
+rownames(macro_4_core) <- NULL
+
+#debt to gdp growth
+data <- macro_4_core %>% mutate(debt_gdp_growth = c(0, diff(log(debt_to_gdp))))
+
+#replacing rest of na:s
+data[is.na(data)] <- 0
+
+
+macro_variables <- list(gdp_growth = data$gdp_growth,#1
+                        money_growth = data$money_growth,#2
+                        short_rate = data$stir,#3
+                        long_rate= data$ltrate,#4
+                        private_debt_gdp =  data$tloans_gdp_growth,#5
+                        equity_rets = data$eq_tr,#6
+                        gov_debt_gdp = data$debt_gdp_growth)#7
+
+sector_variables <- list(industrial = data$industrial_port_chg,
+                         public = data$government_port_chg,
+                         financial = data$financial_port_chg,
+                         dailies = data$dailies_port_chg)
+
+crisis_variables <- list(currency = data$currencyC,
+                         inflation = data$inflationC,
+                         stocks = data$stock_marketC,
+                         debt = data$external_debtC,
+                         bank = data$bankingC,
+                         total = data$Crisis_tally)
+
+
+
+      #Macro variable pick
+# Choose which variables are included into training from each variable class. Then choose from crisis variables
+# which variable is used as response variable and assign it as the output. 
+
+pickM = c(1,3); pickS = c(1,2); pickC = c(1,4)
+output <- "currency"
+data <- create_dataM(output = output, pickM = pickM) %>% as.matrix()
+
+
+      ####parameters####
+data <- data
+test_frac <- 0.2   
+n_timesteps <- 30
+n_features <- ncol(data) - 1 
+
+
+#nn-data
+nn_data <- data_for_nn(data = data, n_timesteps = n_timesteps)
+
+
+
+#Model parameters
+verbose <- 0
+epochs <- 5
+batch_size <- 1
+
+
+
+
+
+#MODEL                                                                      
+
+model <- keras_model_sequential() 
+
+model%>%
+  layer_lstm(units = 50, activation = 'tanh', input_shape = c(n_timesteps, n_features)) %>%
+  layer_dense(25) %>%
+  layer_dense(25) %>%
+  layer_dense(units = 1, activation = 'sigmoid')
+
+
+model %>% compile(
+  loss = 'binary_crossentropy',
+  optimizer = 'adam',  
+  metrics = c('accuracy') 
+)
+
+summary(model)
+
+
+model %>% fit(nn_data$input_train, nn_data$output_train, epochs=epochs, batch_size=batch_size, verbose=1, validation_split = test_frac)
+
+model %>% evaluate(nn_data$input_train, nn_data$output_train)
+
+y_pred <-  model %>% predict(nn_data$input_test)
+
