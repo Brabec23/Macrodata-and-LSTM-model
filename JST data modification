@@ -1,0 +1,32 @@
+
+library(tidyverse)
+library(magrittr)
+
+JSTvariables <- JSTdatasetR4
+JSTdata <- JSTdatasetR4
+View(JSTvariables)
+
+
+#####CRISIS PROBABILITY PREDICTION######
+#choose of features
+
+JSTdata %<>% mutate(gdp_growth = c(0,diff(log(gdp))),
+                    debtgdp_growth = c(0,diff(log(debtgdp))),
+                    tloans_gdp_growth = c(0,diff(log(tloans/gdp))),
+                    id = 1:nrow(JSTdata),
+                    crisisD = c(JSTdata$crisisJST[-1], 0),
+                    money_growth = c(0, diff(log(money))))
+
+chosen_data <- JSTdata %>% dplyr::select(id, year, country, money_growth, stir, ltrate, debtgdp_growth, tloans_gdp_growth, eq_tr, crisisD)
+
+
+#predicting next years crisis
+
+y <- which(chosen_data$crisisD == 1)
+a <- chosen_data[sapply(y, function(x) seq(x, length.out = 3)), ]
+b <- a %>% filter(crisisD == 0) %>% select(id)
+dataM <- chosen_data %>% filter(!id %in% b$id)
+
+
+dataM[is.na(dataM)] <- 0
+write.csv(dataM, file = "macrodata_crisis_pred.csv")
