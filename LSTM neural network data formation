@@ -1,0 +1,110 @@
+
+install.packages("keras")
+library(keras)
+install_keras()
+
+
+
+
+#creating rolling input series
+create_rolls_input <- function(dat1, n_timesteps){
+  N <-  nrow(dat1) - n_timesteps + 1
+  z <- vector(mode = "list", length = ncol(dat1))
+  for (j in 1:ncol(dat1)){
+    x <- NULL
+    for(i in 1:N){
+      s = i-1+n_timesteps
+      x = rbind(x,dat1[i:s, j])
+    }
+    z[[j]] <- x 
+  }
+  return(z)
+}  
+
+
+
+
+#creating target outputs
+create_targets <- function(dat2, n_timesteps, N){
+  y <-  NULL
+  i <- 0
+  for(i in 1:N){
+    s <-  i-1+n_timesteps
+    y <-  rbind(y,dat2[s])
+  }
+  output_train <- y
+  return(y)
+}
+
+
+
+
+# "data_for_nn" -function converts any dataframe, which has the response variable in the first column, into proper lstm -input variables
+
+data_for_nn <- function(data, test_frac = 0.2, n_timesteps){
+  #creating train and test sets
+  n <- round(nrow(data) * (1 - test_frac), digits = 0)
+  train_matrix <- data[1:n, ]
+  test_matrix <- data[(n+1):nrow(data), ]
+  
+  x_train <- train_matrix[ ,-1]
+  y_train <- train_matrix[ ,1]
+  x_test <- test_matrix[ ,-1]
+  y_test <- test_matrix[ ,1]
+
+  
+  
+  ###NN modelling###
+  #TRAIN SET#
+  dat1 <- x_train
+  dat2 <- y_train
+  
+
+  
+  #rolling inputs
+  z <- create_rolls_input(dat1, n_timesteps = n_timesteps) 
+  
+  #Creating static targets
+  N <-  nrow(dat1) - n_timesteps + 1
+  output_train <- create_targets(dat2, n_timesteps = n_timesteps, N = N)
+  
+  #Reshape and scale input
+  #N <-  nrow(dat1) - n_timesteps + 1
+  zz <- array_reshape(z, dim=c(N,n_timesteps,length(z))) #reshape
+  input_train <- scales:: rescale(zz, to = c(0, 1)) #scaling inputs
+  
+  
+  
+  #TEST SET#
+  #creating equal size samples
+  drop <- nrow(x_test) %% n_timesteps
+  x <- x_test[(1+drop):nrow(x_test), ]
+  y <- y_test[(1+drop):length(y_test)]
+  n <- nrow(x_test) - drop
+  r  <- rep(1:ceiling(n/n_timesteps),each=n_timesteps)
+  
+  
+  #Splitting inputs of test 
+  x_test <- vector(mode = "list", length = ncol(x))
+  for (i in 1:ncol(x)){
+    x_test[[i]] <- split(x[ ,i], f = r)
+  }
+  
+  x_test2 <- vector(mode = "list", length = length(x_test))
+  for (i in 1:length(x_test)){
+    x_test2[[i]] <- Reduce(c, x_test[[i]]) %>% matrix(nrow = n/n_timesteps, ncol = n_timesteps, byrow = TRUE)
+  }
+  
+  
+  #Splitting target of test
+  r  <- rep(1:ceiling(n/n_timesteps),each=n_timesteps)
+  y_test <- split(y,r) 
+  
+  #Reshape and scale input
+  xx <- array_reshape(x_test2, dim=c(nrow(x)/n_timesteps,n_timesteps,length(z))) #reshape
+  input_test <- scales:: rescale(xx, to = c(0, 1)) #scaling inputs
+  
+  return(list("input_train" = input_train, "output_train" = output_train, "input_test" = input_test))
+  
+}
+
