@@ -1,7 +1,6 @@
 
 
 library(zoo)
-library(reticulate)
 library(tidyverse)
 library(magrittr)
 
