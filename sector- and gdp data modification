@@ -1,0 +1,98 @@
+
+
+library(tidyverse)
+library(readxl)
+library(magrittr)
+
+
+# DEBT-GDP DATA
+
+cr <- NULL
+result <- NULL
+j <- 0
+for (cr in 1:4){
+  j <- j+1
+  cr <- NULL
+  for (i in 3:25){
+    try(cr[[i]] <- read_xls(paste0("debt_gdp",j,".xls"), sheet = i))
+  }
+  cr <- Filter(function(x) {nrow(x) > 0}, cr)
+  cr <- Filter(function(x) {!is.null(x)}, cr)
+  
+  #naming the list
+  Names <- NULL
+  for (i in 1:length(cr)){
+    try(Names[i] <- colnames(cr[[i]][1]))
+  }
+  names(cr) <- Names
+  for (i in 1:length(cr)){
+    cr[[i]] %<>% as.data.frame()
+    cr[[i]] <- transform(cr[[i]], year = as.numeric(cr[[i]][ ,1])) %>% slice(., -c(1:20))
+    cr[[i]] %<>% mutate(country = rep(gsub("..Debt.to.GDP.ratios","", colnames(cr[[i]])[1]), nrow(cr[[i]]))) %>%
+    select(year, country, debt_to_gdp = 3)
+  }
+  result <- append(result, cr)
+}
+
+
+debt_gdp_data <- result
+
+debt_gdp_data %<>% bind_rows(debt_gdp_data)
+
+
+debt_gdp_data %<>% mutate(country = gsub("..Debt.to.GDP.or.GNP..as.detailed..ratios","", country)) %>%
+  mutate(country = gsub("..Debt.to.GDPratios","", country)) %>% mutate(country  = gsub("[.]", " ", country))
+  
+
+debt_gdp_data$year <- as.character(debt_gdp_data$year)
+
+unique(debt_gdp_data$country)
+debt_gdp_data$country[debt_gdp_data$country == "United Kingdom"] <- "UK"
+debt_gdp_data$country[debt_gdp_data$country == "United States"] <- "USA"
+
+write.csv(debt_gdp_data, file = "debt_gdp_data.csv")
+
+unique(debt_dgp_data$country)
+
+
+
+
+
+# SECTORDATA
+
+
+sector_weights_globally_from_1950 <- read_excel("sector weights globally from 1950.xlsx", 
+                                                sheet = "dataset")
+
+
+dat <- sector_weights_globally_from_1950
+
+
+dat <- dat %>% mutate(country = Country, year = Year) %>%
+  select(-Year, -Country) %>% select(year, country, everything()) %>%
+  mutate(industrial = (Mining + Manufacturing + Construction)) %>%
+  select(financial = 13, daily_serv_and_util = 15, government = 14,everything())
+
+#rename
+dat$country[dat$country ==  "DNK"] <- "Denmark"
+dat$country[dat$country ==  "GBR"] <- "UK"
+dat$country[dat$country ==  "ESP"] <- "Spain"
+dat$country[dat$country ==  "FRA"] <- "France"
+dat$country[dat$country ==  "ITA"] <- "Italy"
+dat$country[dat$country ==  "NLD"] <- "Netherlands"
+dat$country[dat$country ==  "SWE"] <- "Sweden"
+
+dat %<>% select(-13, -15) %>% select(year, country, industrial, government, financial, daily_serv_and_util, Variable) %>% 
+  filter(Variable == "VA_Q05") %>%
+  select(-Variable) %>%
+  mutate(industrial_port_chg = c(0,diff(industrial / (industrial + government + financial + daily_serv_and_util))),
+         government_port_chg = c(0,diff(government / (industrial + government + financial + daily_serv_and_util))),
+         financial_port_chg = c(0,diff(financial / (industrial + government + financial + daily_serv_and_util))),
+         dailies_port_chg = c(0,diff(daily_serv_and_util / (industrial + government + financial + daily_serv_and_util)))) %>%
+  select(-industrial, -government, -financial, -daily_serv_and_util) %>%
+  filter(year != "2011", country %in% c("Denmark", "UK", "USA", "Spain", "France", "Italy", "Netherlands", "Sweden"))
+
+
+write.csv(dat, file ="sectordata.csv")  
+
+
